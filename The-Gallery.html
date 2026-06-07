@@ -1,0 +1,533 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Gallery</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+  <script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.152.2/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js";
+const playerSize = 1.2;
+const player = new THREE.Mesh(
+  new THREE.SphereGeometry(playerSize / 2, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0x00ff23 })
+);
+/* ---------- scene ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+camera.position.set(0, 12, 133);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+controls.enableZoom = true;
+controls.enableRotate = true;
+controls.enablePan = false;
+
+controls.minDistance = 3;
+controls.maxDistance = 25;
+/* ---------- light ---------- */
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(5, 10, 5);
+scene.add(sun);
+
+
+
+/* ---------- start = 0, 14, 18 ---------- */
+player.position.set(0, 14, 125);
+scene.add(player);
+
+camera.position.set(
+    player.position.x,
+    player.position.y + 8,
+    player.position.z + 12
+);
+
+controls.target.set(
+    player.position.x,
+    player.position.y + 1,
+    player.position.z
+);
+
+controls.update();
+
+/* ---------- respawn machinee ---------- */
+let respawnPosition = new THREE.Vector3(0, 14, 125);
+
+/* ---------- raycaster ---------- */
+const raycaster = new THREE.Raycaster();
+
+/* ---------- platforms ---------- */
+const platforms = [];
+
+function makePlatform(x, y, z, w, h, d, c) {
+  const p = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color: c })
+  );
+  p.position.set(x, y, -z);
+  p.userData = { isKillBrick: false };
+  scene.add(p);
+  platforms.push(p);
+}
+
+function makeKillBrick(x, y, z, w, h, d) {
+  const p = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color: "red" })
+  );
+  p.position.set(x, y, -z);
+  p.userData = { isKillBrick: true };
+  scene.add(p);
+  platforms.push(p);
+}
+
+function makeCheckpoint(x, y, z, w, h, d) {
+  const p = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color: 0x00ffff })
+  );
+  p.position.set(x, y, -z);
+  p.userData = { isCheckpoint: true, activated: false };
+  scene.add(p);
+  platforms.push(p);
+}
+
+function makeSign(x, y, z, w, h, text, rotDeg = 0, si = 28) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+
+    const ctx = canvas.getContext("2d");
+
+    // Background
+    ctx.fillStyle = "#666";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Border
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+    // Text settings
+    ctx.fillStyle = "white";
+    ctx.font = `${si}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Word wrap
+    const maxWidth = canvas.width - 20;
+    const words = text.split(" ");
+    const lines = [];
+    let line = "";
+
+    for (let i = 0; i < words.length; i++) {
+        const testLine = line + words[i] + " ";
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > maxWidth && i > 0) {
+            lines.push(line.trim());
+            line = words[i] + " ";
+        } else {
+            line = testLine;
+        }
+    }
+
+    lines.push(line.trim());
+
+    // Center lines vertically
+    const lineHeight = si * 1.2;
+    const totalHeight = lines.length * lineHeight;
+    const startY = (canvas.height - totalHeight) / 2 + lineHeight / 2;
+
+    for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(
+            lines[i],
+            canvas.width / 2,
+            startY + i * lineHeight
+        );
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const sign = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.DoubleSide,
+            transparent: true
+        })
+    );
+
+    sign.position.set(x, y + h / 2, -z);
+    sign.rotation.y = THREE.MathUtils.degToRad(rotDeg);
+
+    scene.add(sign);
+
+    return sign;
+}
+function makeImage(x, y, z, w, h, imageUrl, rotDeg = 0) {
+    const texture = new THREE.TextureLoader().load(imageUrl);
+
+    const sign = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.DoubleSide,
+            transparent: true
+        })
+    );
+
+    sign.position.set(x, y + h / 2, -z);
+    sign.rotation.y = THREE.MathUtils.degToRad(rotDeg);
+
+    scene.add(sign);
+
+    return sign;
+}
+/* ---------- map objects ---------- */
+makePlatform(0, 0, 30, 25, 1, 325, 0xc60106);
+makePlatform(0, 0.2, -125, 5, 0.7, 5, 0xFFD700);
+
+makePlatform(-10, 1, -110, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -110, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -110, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -110, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -110, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -110, 3, 1, "Day 1: The Beginnings", 90, 28);
+makeImage(-10, 5.5, -110, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day1.PNG", 90);
+
+makePlatform(-10, 1, -100, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -100, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -100, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -100, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -100, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -100, 3, 1, "Day 2: Progression", 90, 28);
+makeImage(-10, 5.5, -100, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day2.png", 90);
+
+makePlatform(-10, 1, -90, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -90, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -90, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -90, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -90, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -90, 3, 1, "Day 3: Hang on", 90, 28);
+makeImage(-10, 5.5, -90, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day3.png", 90);
+
+makePlatform(-10, 1, -80, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -80, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -80, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -80, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -80, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -80, 3, 1, "Day 4: Continue", 90, 28);
+makeImage(-10, 5.5, -80, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day4.png", 90);
+
+makePlatform(-10, 1, -70, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -70, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -70, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -70, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -70, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -70, 3, 1, "Day 5: Continue..", 90, 28);
+makeImage(-10, 5.5, -70, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day5.png", 90);
+
+makePlatform(-10, 1, -60, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -60, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -60, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -60, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -60, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -60, 3, 1, "Day 6: Moving on", 90, 28);
+makeImage(-10, 5.5, -60, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day6.png", 90);
+
+makePlatform(-10, 1, -50, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -50, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -50, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -50, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -50, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -50, 3, 1, "Day 7: Rock hard", 90, 28);
+makeImage(-10, 5.5, -50, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day7.png", 90);
+
+makePlatform(-10, 1, -40, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -40, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -40, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -40, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -40, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -40, 3, 1, "Day 8: Emotional", 90, 28);
+makeImage(-10, 5.5, -40, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day8.png", 90);
+
+makePlatform(-10, 1, -30, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -30, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -30, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -30, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -30, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.5, -30, 3, 1, "Day 9: Gangster", 90, 28);
+makeImage(-10, 5.5, -30, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day9.png", 90);
+
+makePlatform(-10, 1.0, -20, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -20, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -20, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -20, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -20, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, -20, 3, 1, "Day 10: Caught", 90, 28);
+makeImage(-10, 5.5000, -20, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day10.png", 90);
+
+makePlatform(-10, 1.0, -10, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, -10, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, -10, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, -10, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, -10, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, -10, 3, 1, "Day 11: Scubaa", 90, 28);
+makeImage(-10, 5.5000, -10, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day11.png", 90);
+
+makePlatform(-10, 1.0, 0, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 0, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 0, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 0, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 0, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 0, 3, 1, "The Concert", 90, 28);
+makeImage(-10, 5.5000, 0, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Concert.png", 90);
+
+makePlatform(-10, 1.0, 10, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 10, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 10, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 10, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 10, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 10, 3, 1, "Day 12: Movies", 90, 28);
+makeImage(-10, 5.5000, 10, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day12.png", 90);
+
+makePlatform(-10, 1.0, 20, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 20, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 20, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 20, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 20, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 20, 3, 1, "Day 13: Birds", 90, 28);
+makeImage(-10, 5.5000, 20, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day13.png", 90);
+
+makePlatform(-10, 1.0, 30, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 30, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 30, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 30, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 30, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 30, 3, 1, "Day 14: To the moon", 90, 28);
+makeImage(-10, 5.5000, 30, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day14.png", 90);
+
+makePlatform(-10, 1.0, 40, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 40, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 40, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 40, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 40, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 40, 3, 1, "Day 15: At The Beach", 90, 28);
+makeImage(-10, 5.5000, 40, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day15.png", 90);
+
+makePlatform(-10, 1.0, 50, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 50, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 50, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 50, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 50, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 50, 3, 1, "Day 16: Volcanic", 90, 28);
+makeImage(-10, 5.5000, 50, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day16.png", 90);
+
+makePlatform(-10, 1.0, 60, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 60, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 60, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 60, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 60, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 60, 3, 1, "Good Job!", 90, 28);
+makeImage(-10, 5.5000, 60, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Goodjob.png", 90);
+
+makePlatform(-10, 1.0, 70, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 70, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 70, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 70, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 70, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 70, 3, 1, "Day 17: The Army", 90, 28);
+makeImage(-10, 5.5000, 70, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day17.png", 90);
+
+makePlatform(-10, 1.0, 80, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 80, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 80, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 80, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 80, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 80, 3, 1, "Day 18: The Return Of The King", 90, 28);
+makeImage(-10, 5.5000, 80, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day18.png", 90);
+
+makePlatform(-10, 1.0, 90, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 90, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 90, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 90, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 90, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 90, 3, 1, "Day 19: Night", 90, 28);
+makeImage(-10, 5.5000, 90, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/Day19.png", 90);
+
+makePlatform(-10, 1.0, 100, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 100, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 100, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 100, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 100, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 100, 3, 1, "Exploration", 90, 28);
+makeImage(-10, 5.5000, 100, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/sightseeing.png", 90);
+
+makePlatform(-10, 1.0, 110, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 110, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 110, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 110, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 110, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 110, 3, 1, "The Scuba is Done", 90, 28);
+makeImage(-10, 5.5000, 110, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/noscuba.png", 90);
+
+makePlatform(-10, 1.0, 120, 5, 1, 5, 0xA9A9A9);
+makePlatform(-10, 1.6, 120, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 2.1, 120, 4, 1, 4, 0x818589);
+makePlatform(-10, 2.7, 120, 4.5, 0.2, 4.5, 0x818589);
+makePlatform(-10, 3.3, 120, 5, 1, 5, 0xA9A9A9);
+makeSign(-7.45, 0.500, 120, 3, 1, "Mango boiii", 90, 28);
+makeImage(-10, 5.5000, 120, 7, 7, "https://cdn.jsdelivr.net/gh/iidkekkxmdie/dylanproject@main/mango-boi.png", 90);
+
+
+
+
+
+/* ---------- input ---------- */
+const keys = {};
+addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+/* ---------- physics ---------- */
+let velocityY = 0;
+const gravity = -0.03;
+const speed = -0.4;
+const jumpPower = 0.65;
+
+function updatePlayer() {
+  const moveStep = speed;
+
+const dir = new THREE.Vector3();
+camera.getWorldDirection(dir);
+dir.y = 0;
+dir.normalize();
+dir.negate(); 
+
+const right = new THREE.Vector3();
+right.crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
+
+  function canMove(offset) {
+    const origin = player.position.clone();
+    origin.y += playerSize / 2;
+    raycaster.set(origin, offset.clone().normalize());
+    const hits = raycaster.intersectObjects(platforms, false);
+    return !(hits.length && hits[0].distance < moveStep + 0.05);
+  }
+
+  if (keys.w && canMove(dir)) player.position.add(dir.clone().multiplyScalar(moveStep));
+  if (keys.s && canMove(dir.clone().negate())) player.position.add(dir.clone().multiplyScalar(-moveStep));
+  if (keys.a && canMove(right)) player.position.add(right.clone().multiplyScalar(moveStep));
+  if (keys.d && canMove(right.clone().negate())) player.position.add(right.clone().multiplyScalar(-moveStep));
+
+  velocityY += gravity;
+  player.position.y += velocityY;
+
+  const offsets = [
+    new THREE.Vector3(0,0,0),
+    new THREE.Vector3(0.5,0,0),
+    new THREE.Vector3(-0.5,0,0),
+    new THREE.Vector3(0,0,0.5),
+    new THREE.Vector3(0,0,-0.5)
+  ];
+
+  let grounded = false;
+  for (const o of offsets) {
+    const origin = player.position.clone().add(o);
+    raycaster.set(origin, new THREE.Vector3(0,-1,0));
+    const hits = raycaster.intersectObjects(platforms, false);
+    if (hits.length && !hits[0].object.userData.isKillBrick &&
+        hits[0].distance <= playerSize/2 + 0.05 && velocityY <= 0) {
+      player.position.y = hits[0].point.y + playerSize/2;
+      velocityY = 0;
+      grounded = true;
+      break;
+    }
+  }
+
+  if (grounded && keys[" "]) velocityY = jumpPower;
+
+  const playerSphere = new THREE.Sphere(player.position, playerSize*0.7);
+
+  for (const p of platforms) {
+    const box = new THREE.Box3().setFromObject(p);
+
+    if (p.userData.isKillBrick && playerSphere.intersectsBox(box)) {
+      player.position.copy(respawnPosition);
+      velocityY = 0;
+      return;
+    }
+
+    if (p.userData.isCheckpoint && !p.userData.activated &&
+        playerSphere.intersectsBox(box)) {
+      respawnPosition.copy(player.position);
+      respawnPosition.y += 1;
+      p.userData.activated = true;
+      p.material.color.set(0x00ff00);
+      console.log("Checkpoint activated at", respawnPosition);
+    }
+  }
+
+  if (player.position.y < -40) {
+    player.position.copy(respawnPosition);
+    velocityY = 0;
+  }
+}
+
+
+
+
+
+
+const lastPlayerPos = player.position.clone();
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const oldPos = player.position.clone();
+
+    updatePlayer();
+
+    const delta = player.position.clone().sub(oldPos);
+
+    camera.position.add(delta);
+    controls.target.add(delta);
+
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+
+/* ---------- resize ---------- */
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
